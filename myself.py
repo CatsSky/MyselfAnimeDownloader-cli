@@ -491,15 +491,7 @@ class Myself:
             cls.download_episode(thread_id, i, download_dir, threads, anime_info=anime_info)
         
 
-
-def _build_parser():
-    parser = argparse.ArgumentParser(description='Download anime from myself-bbs.com')
-    
-    subcmd = parser.add_subparsers(
-        dest='subcmd', help='subcommands', metavar='SUBCOMMAND')
-    subcmd.required = True
-
-    # download
+def _build_dl_parser(subcmd):
     dl_parser = subcmd.add_parser('download',
                                   aliases=['d', 'dl'],
                                   help='download anime')
@@ -513,11 +505,28 @@ def _build_parser():
                            nargs='+',
                            help='episode index')
 
-    # echo
-    echo_parser = subcmd.add_parser('echo',
-                                    help='echo a given message')
-    echo_parser.add_argument('msg', help='the message', metavar='\'MESSAGE\'')
+def _build_parser():
+    parser = argparse.ArgumentParser(description='Download anime from myself-bbs.com')
     
+    parser.add_argument(
+        '-d', '--debug',
+        help="Print lots of debugging statements",
+        action="store_const", dest="loglevel", const=logging.DEBUG,
+        default=logging.WARNING,
+    )
+    parser.add_argument(
+        '-v', '--verbose',
+        help="Be verbose",
+        action="store_const", dest="loglevel", const=logging.INFO,
+    )
+    
+    # sub commands
+    subcmd = parser.add_subparsers(
+        dest='subcmd', help='subcommands', metavar='SUBCOMMAND')
+    subcmd.required = True
+
+    _build_dl_parser(subcmd)
+
     return parser
 
 
@@ -525,6 +534,7 @@ def _build_parser():
 if __name__ == '__main__':
     parser = _build_parser()
     args = parser.parse_args()
+    logging.getLogger().setLevel(level=args.loglevel)
     
     log.debug(args)
     
