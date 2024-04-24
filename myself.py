@@ -11,7 +11,7 @@ import os
 from contextlib import closing
 from functools import reduce
 from typing import TypedDict, List, Tuple
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from tqdm import TqdmExperimentalWarning
 import concurrent
 import shutil
@@ -157,20 +157,20 @@ class Myself:
         data = {}
         if res and res.ok:
             html = BeautifulSoup(res.text, features='lxml')
-            elements = html.find('div', id='tabSuCvYn')
-            for index, elements in enumerate(elements.find_all('div', class_='module cl xl xl1')):
-                animes = []
-                for element in elements:
-                    animes.append({
-                        'name': element.find('a')['title'],
-                        'url': f"https://myself-bbs.com/{element.find('a')['href']}",
-                        'update_color': element.find('span').find('font').find('font')['style'],
-                        'update': element.find('span').find('font').text,
-                    })
+            if (elements := html.find('div', id='tabSuCvYn')) is Tag:
+                for index, elements in enumerate(elements.find_all('div', class_='module cl xl xl1')):
+                    animes = []
+                    for element in elements:
+                        animes.append({
+                            'name': element.find('a')['title'],
+                            'url': f"https://myself-bbs.com/{element.find('a')['href']}",
+                            'update_color': element.find('span').find('font').find('font')['style'],
+                            'update': element.find('span').find('font').text,
+                        })
 
-                data.update({
-                    week[index]: animes
-                })
+                    data.update({
+                        week[index]: animes
+                    })
 
         return data
 
@@ -260,12 +260,13 @@ class Myself:
         data = {}
         if res and res.ok:
             html = BeautifulSoup(res.text, features='lxml')
-            data.update(cls.anime_info_table(html=html))
-            data.update({
-                'url': url,
-                'name': bad_name(html.find('title').text.split('【')[0]),
-                'video': cls.anime_info_video_data(html=html)
-            })
+            if (title := html.find('title')) is not None:
+                data.update(cls.anime_info_table(html=html))
+                data.update({
+                    'url': url,
+                    'name': bad_name(title.text.split('【')[0]),
+                    'video': cls.anime_info_video_data(html=html)
+                })
 
         return data
 
