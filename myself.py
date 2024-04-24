@@ -2,6 +2,8 @@ from concurrent.futures import Future, ThreadPoolExecutor
 import concurrent.futures
 import glob
 import json
+import logging
+from rich.logging import RichHandler
 import ssl
 import subprocess
 import m3u8
@@ -23,7 +25,15 @@ import warnings
 # ignore tqdm.rich warning about expirimental feature
 warnings.filterwarnings("ignore", category=TqdmExperimentalWarning)
 
+# logging settings
+FORMAT = "%(message)s"
+logging.basicConfig(
+    level="WARNING", format=FORMAT, datefmt="[%X]", handlers=[RichHandler()]
+)
 
+log = logging.getLogger("rich")
+
+# http settings
 headers = {
     'origin': 'https://v.myself-bbs.com',
     'referer': 'https://v.myself-bbs.com/',
@@ -413,9 +423,11 @@ class Myself:
             f.write(video_content)
 
     @classmethod
-    def download_episode(cls, thread_id: int, episode_index: int, download_dir: str = '.', threads: int = 8):
+    def download_episode(cls, thread_id: int, episode_index: int, download_dir: str = '.', threads: int = 8, anime_info: AnimeTotalInfoTableDict | None = None):
 
-        anime_info = cls.anime_total_info(url=f'https://myself-bbs.com/thread-{thread_id}-1-1.html')
+        if anime_info is None:
+            print('fetching anime info...')
+            anime_info = cls.anime_total_info(url=f'https://myself-bbs.com/thread-{thread_id}-1-1.html')
 
         episode_info = anime_info['video'][episode_index]
         video_url, m3u8_url = cls.parse_episode_url(episode_info['url'])
@@ -458,6 +470,8 @@ class Myself:
         
         print(f'Pruning ts files...')
         
+        download_dir = os.path.join(download_dir, anime_info['name'])
+        os.mkdir(download_dir)
         os.rename(
             os.path.join(ts_dir, merged_mp4),
             os.path.join(download_dir, merged_mp4)
@@ -469,11 +483,12 @@ class Myself:
         
     @classmethod
     def download_anime(cls, thread_id: int, download_dir: str = '.', threads: int = 8):
+        print('fetching anime info...')
         anime_info = cls.anime_total_info(url=f'https://myself-bbs.com/thread-{thread_id}-1-1.html')
         episodes = len(anime_info['video'])
         
         for i in range(episodes):
-            cls.download_episode(thread_id, i, download_dir, threads)
+            cls.download_episode(thread_id, i, download_dir, threads, anime_info=anime_info)
         
 
 
@@ -511,12 +526,12 @@ if __name__ == '__main__':
     parser = _build_parser()
     args = parser.parse_args()
     
-    print(args)
+    log.debug(args)
     
     if args.subcmd == 'download':
         if args.e is not None:
             for e in args.e:
-                Myself.download_episode(args.thread_id, e)
+                Myself.download_episode(args.thread_id, e, download_dir='./download')
         else:
-            Myself.download_anime(args.thread_id)
+            Myself.download_anime(args.thread_id, download_dir='./download')
     
