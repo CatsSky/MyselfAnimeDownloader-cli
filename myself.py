@@ -1,3 +1,4 @@
+from ast import alias
 from concurrent.futures import Future, ThreadPoolExecutor
 import concurrent.futures
 import glob
@@ -471,7 +472,7 @@ class Myself:
         print(f'Pruning ts files...')
         
         download_dir = os.path.join(download_dir, anime_info['name'])
-        os.mkdir(download_dir)
+        os.makedirs(download_dir, exist_ok=True)
         os.rename(
             os.path.join(ts_dir, merged_mp4),
             os.path.join(download_dir, merged_mp4)
@@ -491,6 +492,18 @@ class Myself:
             cls.download_episode(thread_id, i, download_dir, threads, anime_info=anime_info)
         
 
+# helper
+def dir_path(string):
+    if not os.path.exists(string):
+        # check for permission first
+        os.makedirs(string)
+        return string
+    elif os.path.isdir(string):
+        return string
+    else:
+        raise NotADirectoryError(string)
+
+
 def _build_dl_parser(subcmd):
     dl_parser = subcmd.add_parser('download',
                                   aliases=['d', 'dl'],
@@ -498,12 +511,22 @@ def _build_dl_parser(subcmd):
     dl_parser.add_argument('thread_id',
                            type=int,
                            help='thread id of the anime, can check it on the website url. It is in the form of "thread-47717-1-1.html" or "forum.php?tid=47717", the id would be 47717')
-    dl_parser.add_argument('-e',
+    dl_parser.add_argument('-e', '--episode-index',
                            type=int,
                            required=False,
                            default=None,
                            nargs='+',
-                           help='episode index')
+                           help='episode index, if not specified, downloads the whole anime series')
+    dl_parser.add_argument('-t', '--thread-id',
+                           type=int,
+                           required=False,
+                           default=8,
+                           help='number of download threads (Default: 8)')
+    dl_parser.add_argument('-d', '--download-path',
+                           type=dir_path,
+                           required=False,
+                           default='./download',
+                           help='specify the download directory (default: "./download")')
 
 def _build_parser():
     parser = argparse.ArgumentParser(description='Download anime from myself-bbs.com')
@@ -541,7 +564,7 @@ if __name__ == '__main__':
     if args.subcmd == 'download':
         if args.e is not None:
             for e in args.e:
-                Myself.download_episode(args.thread_id, e, download_dir='./download')
+                Myself.download_episode(args.thread_id, e, download_dir=args.d)
         else:
-            Myself.download_anime(args.thread_id, download_dir='./download')
+            Myself.download_anime(args.thread_id, download_dir=args.d)
     
