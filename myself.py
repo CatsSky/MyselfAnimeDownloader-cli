@@ -489,6 +489,11 @@ class Myself:
         episodes = len(anime_info['video'])
         
         for i in range(episodes):
+            file_name = f'{anime_info["name"]} {anime_info["video"][i]["name"]}.mp4'
+            file_path = os.path.join(download_dir, file_name)
+            if os.path.exists(file_path):
+                log.info(f'{file_name} already downloaded, skipped...')
+                continue
             cls.download_episode(thread_id, i, download_dir, threads, anime_info=anime_info)
         
 
@@ -514,7 +519,7 @@ def _build_dl_parser(subcmd):
     dl_parser.add_argument('-e', '--episode-index',
                            type=int,
                            required=False,
-                           default=None,
+                           default=[],
                            nargs='+',
                            help='episode index, if not specified, downloads the whole anime series')
     dl_parser.add_argument('-t', '--thread-id',
@@ -562,9 +567,9 @@ if __name__ == '__main__':
     log.debug(args)
     
     if args.subcmd == 'download':
-        if args.e is not None:
-            for e in args.e:
-                Myself.download_episode(args.thread_id, e, download_dir=args.d)
+        if len(args.episode_index) > 0:
+            for e in args.episode_index:
+                Myself.download_episode(args.thread_id, e, download_dir=args.download_path)
         else:
-            Myself.download_anime(args.thread_id, download_dir=args.d)
+            Myself.download_anime(args.thread_id, download_dir=args.download_path)
     
