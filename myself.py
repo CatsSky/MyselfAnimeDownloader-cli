@@ -1,4 +1,3 @@
-from ast import alias
 from concurrent.futures import Future, ThreadPoolExecutor
 import concurrent.futures
 import glob
@@ -6,7 +5,7 @@ import json
 import logging
 from rich.logging import RichHandler
 import ssl
-import subprocess
+from subprocess import Popen, PIPE, STDOUT
 import m3u8
 import requests
 import websocket
@@ -125,7 +124,7 @@ class FinishListDict(TypedDict):
     data: List[FinishListDataDict]
 
 
-
+# helper functions
 def bad_name(name: str) -> str:
     """
     避免不正當名字出現導致資料夾或檔案無法創建。
@@ -136,6 +135,22 @@ def bad_name(name: str) -> str:
     ban = r'\/:*?"<>|'
     return reduce(lambda x, y: x + y if y not in ban else x + ' ', name).strip()
 
+
+# https://stackoverflow.com/questions/21953835/run-subprocess-and-print-output-to-logging
+def log_subprocess_output(pipe, log_level: int):
+    for line in iter(pipe.readline, b''): # b'\n'-separated lines
+        log.log(log_level, line)
+        
+        
+def dir_path(string):
+    if not os.path.exists(string):
+        # check for permission first
+        os.makedirs(string)
+        return string
+    elif os.path.isdir(string):
+        return string
+    else:
+        raise NotADirectoryError(string)
 
 
 class Myself:
@@ -464,16 +479,21 @@ class Myself:
             file.write('\n'.join(map(lambda s: f'file {s}', ts_files)))
         
         merged_mp4 = f'{anime_info["name"]} {episode_info["name"]}.mp4'
-        
-        subprocess.run([
+
+        process = Popen([
             'ffmpeg', '-y', '-f', 'concat', '-i', 'files.txt', '-c', 'copy', '-bsf:a', 'aac_adtstoasc', merged_mp4
-        ], cwd=ts_dir)
+        ], stdout=PIPE, stderr=STDOUT, cwd=ts_dir)
+        if process.stdout is not None:
+            with process.stdout:
+                log_subprocess_output(process.stdout, logging.DEBUG)
+            exitcode = process.wait()
         
         print(f'Pruning ts files...')
         
-        download_dir = os.path.join(download_dir, anime_info['name'])
         os.makedirs(download_dir, exist_ok=True)
-        os.rename(
+        
+        print('moving file to destination...')
+        shutil.move(
             os.path.join(ts_dir, merged_mp4),
             os.path.join(download_dir, merged_mp4)
         )
@@ -484,34 +504,28 @@ class Myself:
         
     @classmethod
     def download_anime(cls, thread_id: int, download_dir: str = '.', threads: int = 8):
-        print('fetching anime info...')
+        print(f'fetching anime info of {thread_id}...')
         anime_info = cls.anime_total_info(url=f'https://myself-bbs.com/thread-{thread_id}-1-1.html')
         episodes = len(anime_info['video'])
+        
+        download_dir = os.path.join(download_dir, anime_info['name'])
         
         for i in range(episodes):
             file_name = f'{anime_info["name"]} {anime_info["video"][i]["name"]}.mp4'
             file_path = os.path.join(download_dir, file_name)
+            log.debug(f'testing path {file_path}...')
             if os.path.exists(file_path):
                 log.info(f'{file_name} already downloaded, skipped...')
                 continue
+            log.info(f'not downloaded, proceed to download')
             cls.download_episode(thread_id, i, download_dir, threads, anime_info=anime_info)
         
+    print('finished downloading')
 
-# helper
-def dir_path(string):
-    if not os.path.exists(string):
-        # check for permission first
-        os.makedirs(string)
-        return string
-    elif os.path.isdir(string):
-        return string
-    else:
-        raise NotADirectoryError(string)
 
 
 def _build_dl_parser(subcmd):
     dl_parser = subcmd.add_parser('download',
-                                  aliases=['d', 'dl'],
                                   help='download anime')
     dl_parser.add_argument('thread_id',
                            type=int,
