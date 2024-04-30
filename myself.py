@@ -514,9 +514,11 @@ class Myself:
             file_name = f'{anime_info["name"]} {anime_info["video"][i]["name"]}.mp4'
             file_path = os.path.join(download_dir, file_name)
             log.debug(f'testing path {file_path}...')
-            if os.path.exists(file_path):
+            
+            if os.path.exists(file_path) or os.path.exists(os.path.join(download_dir, f'{anime_info["video"][i]["name"]}.mp4')):
                 log.info(f'{file_name} already downloaded, skipped...')
                 continue
+            
             log.info(f'not downloaded, proceed to download')
             cls.download_episode(thread_id, i, download_dir, threads, anime_info=anime_info)
         
