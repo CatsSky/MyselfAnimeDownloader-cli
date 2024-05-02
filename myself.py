@@ -19,7 +19,8 @@ import concurrent
 import shutil
 import argparse
 from rich import print
-from tqdm.rich import tqdm_rich as tqdm
+# from tqdm.rich import tqdm_rich as tqdm
+from tqdm import tqdm
 import warnings
 
 # ignore tqdm.rich warning about expirimental feature
@@ -430,6 +431,7 @@ class Myself:
             video_id=video_id,
         )
 
+
     @classmethod
     def download_ts(cls, ts_url: str, directory: str, uri: str):
     # def download_ts(cls, arg: tuple[str, str, str]):
@@ -437,6 +439,7 @@ class Myself:
         video_content = cls.get_content(url=ts_url)
         with open(os.path.join(directory, uri), 'wb') as f:
             f.write(video_content)
+
 
     @classmethod
     def download_episode(cls, thread_id: int, episode_index: int, download_dir: str = '.', threads: int = 8, anime_info: AnimeTotalInfoTableDict | None = None):
@@ -446,6 +449,7 @@ class Myself:
             anime_info = cls.anime_total_info(url=f'https://myself-bbs.com/thread-{thread_id}-1-1.html')
 
         episode_info = anime_info['video'][episode_index]
+        merged_mp4 = f'{anime_info["name"]} {episode_info["name"]}.mp4'
         video_url, m3u8_url = cls.parse_episode_url(episode_info['url'])
 
         m3u8_obj = m3u8.loads(cls.get_m3u8_text(m3u8_url))
@@ -456,10 +460,11 @@ class Myself:
         shutil.rmtree(ts_dir, ignore_errors=True)
         os.makedirs(ts_dir, exist_ok=True)
 
-        print(f'Downloading {anime_info["name"]}: {episode_info["name"]}...')
+
+        log.info(f'Downloading {anime_info["name"]}: {episode_info["name"]}...')
         
         with ThreadPoolExecutor(max_workers=threads) as executor:
-            futures:list[Future] = []
+            futures: list[Future] = []
             for m3u8_data in m3u8_obj.segments:
                 futures.append(executor.submit(
                     cls.download_ts,
@@ -468,61 +473,63 @@ class Myself:
                     uri=m3u8_data.uri
                 ))
             
-            with tqdm(total=len(futures), smoothing=0) as bar:
+            with tqdm(total=len(futures), smoothing=0, position=episode_index, desc=f'{episode_info["name"]}') as bar:
                 for future in concurrent.futures.as_completed(futures):
                     bar.update()
         
-        print(f'Merging ts files...')
+        
+        log.info(f'{episode_info["name"]} Merging ts files...')
         
         ts_files = sorted(glob.glob(root_dir=ts_dir, pathname='*.ts'))
         with open(os.path.join(ts_dir, 'files.txt'), '+a') as file:
             file.write('\n'.join(map(lambda s: f'file {s}', ts_files)))
-        
-        merged_mp4 = f'{anime_info["name"]} {episode_info["name"]}.mp4'
 
         process = Popen([
             'ffmpeg', '-y', '-f', 'concat', '-i', 'files.txt', '-c', 'copy', '-bsf:a', 'aac_adtstoasc', merged_mp4
         ], stdout=PIPE, stderr=STDOUT, cwd=ts_dir)
+        
         if process.stdout is not None:
             with process.stdout:
                 log_subprocess_output(process.stdout, logging.DEBUG)
             exitcode = process.wait()
         
-        print(f'Pruning ts files...')
         
+        log.info(f'{episode_info["name"]} moving file to destination...')
         os.makedirs(download_dir, exist_ok=True)
-        
-        print('moving file to destination...')
         shutil.move(
             os.path.join(ts_dir, merged_mp4),
             os.path.join(download_dir, merged_mp4)
         )
         
+        log.info(f'{episode_info["name"]} Pruning ts files...')
         shutil.rmtree(ts_dir)
         
-        print(f'Download completed!')
+        log.info(f'{episode_info["name"]} downloaded!')
+        
         
     @classmethod
-    def download_anime(cls, thread_id: int, download_dir: str = '.', threads: int = 8):
+    def download_anime(cls, thread_id: int, download_dir: str = '.', threads: int = 8, e_threads: int = 4):
         print(f'fetching anime info of {thread_id}...')
         anime_info = cls.anime_total_info(url=f'https://myself-bbs.com/thread-{thread_id}-1-1.html')
         episodes = len(anime_info['video'])
         
         download_dir = os.path.join(download_dir, anime_info['name'])
         
-        for i in range(episodes):
-            file_name = f'{anime_info["name"]} {anime_info["video"][i]["name"]}.mp4'
-            file_path = os.path.join(download_dir, file_name)
-            log.debug(f'testing path {file_path}...')
-            
-            if os.path.exists(file_path) or os.path.exists(os.path.join(download_dir, f'{anime_info["video"][i]["name"]}.mp4')):
-                log.info(f'{file_name} already downloaded, skipped...')
-                continue
-            
-            log.info(f'not downloaded, proceed to download')
-            cls.download_episode(thread_id, i, download_dir, threads, anime_info=anime_info)
+        with ThreadPoolExecutor(max_workers=e_threads) as executor:
+            for i in range(episodes):
+                file_name = f'{anime_info["name"]} {anime_info["video"][i]["name"]}.mp4'
+                file_path = os.path.join(download_dir, file_name)
+                log.debug(f'testing path {file_path}...')
+                
+                if os.path.exists(file_path) or os.path.exists(os.path.join(download_dir, f'{anime_info["video"][i]["name"]}.mp4')):
+                    log.info(f'{file_name} already downloaded, skipped...')
+                    continue
+                
+                log.info(f'not downloaded, proceed to download')
+                executor.submit(cls.download_episode, thread_id, i, download_dir, threads, anime_info=anime_info)
+                
         
-    print('finished downloading')
+        print(f'finished downloading {anime_info["name"]}')
 
 
 
@@ -538,11 +545,16 @@ def _build_dl_parser(subcmd):
                            default=[],
                            nargs='+',
                            help='episode index, if not specified, downloads the whole anime series')
-    dl_parser.add_argument('-t', '--thread-id',
+    dl_parser.add_argument('-t', '--threads',
                            type=int,
                            required=False,
                            default=8,
-                           help='number of download threads (Default: 8)')
+                           help='number of concurrent download threads per episode (Default: 8)')
+    dl_parser.add_argument('-c',
+                           type=int,
+                           required=False,
+                           default=4,
+                           help='number of episodes downloaded at a time (Default: 4)')
     dl_parser.add_argument('-d', '--download-path',
                            type=dir_path,
                            required=False,
@@ -587,5 +599,5 @@ if __name__ == '__main__':
             for e in args.episode_index:
                 Myself.download_episode(args.thread_id, e, download_dir=args.download_path)
         else:
-            Myself.download_anime(args.thread_id, download_dir=args.download_path)
-    
+            Myself.download_anime(args.thread_id, download_dir=args.download_path, threads=args.threads, e_threads=args.c)
+
