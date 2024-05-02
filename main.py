@@ -48,8 +48,6 @@ def dir_path(string):
 
 
 def download_ts(ts_url: str, directory: str, uri: str):
-# def download_ts(Myself, arg: tuple[str, str, str]):
-    # ts_url, directory, uri = arg
     video_content = Myself.get_content(url=ts_url)
     with open(os.path.join(directory, uri), 'wb') as f:
         f.write(video_content)
@@ -208,7 +206,8 @@ if __name__ == '__main__':
     
     if args.subcmd == 'download':
         if len(args.episode_index) > 0:
-            for e in args.episode_index:
-                download_episode(args.thread_id, e, download_dir=args.download_path)
+            with ThreadPoolExecutor(max_workers=args.c) as executor:
+                for e in args.episode_index:
+                    executor.submit(download_episode, args.thread_id, e, download_dir=args.download_path)
         else:
             download_anime(args.thread_id, download_dir=args.download_path, threads=args.threads, e_threads=args.c)
