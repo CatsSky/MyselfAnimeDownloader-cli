@@ -12,7 +12,7 @@ import concurrent
 import shutil
 import argparse
 # from tqdm.rich import tqdm_rich as tqdm
-from tqdm import tqdm
+from tqdm.auto import tqdm
 import warnings
 from myself import Myself, AnimeTotalInfoTableDict
 
@@ -53,7 +53,12 @@ def download_ts(ts_url: str, directory: str, uri: str):
         f.write(video_content)
 
 
-def download_episode(thread_id: int, episode_index: int, download_dir: str = '.', threads: int = 8, anime_info: AnimeTotalInfoTableDict | None = None):
+def download_episode(thread_id: int, 
+                     episode_index: int, 
+                     download_dir: str = '.', 
+                     threads: int = 8, 
+                     anime_info: AnimeTotalInfoTableDict | None = None, 
+                     bar_position: int | None = None):
 
     if anime_info is None:
         print('fetching anime info...')
@@ -84,8 +89,8 @@ def download_episode(thread_id: int, episode_index: int, download_dir: str = '.'
                 uri=m3u8_data.uri
             ))
         
-        with tqdm(total=len(futures), smoothing=0, position=episode_index, desc=f'{episode_info["name"]}') as bar:
-            for future in concurrent.futures.as_completed(futures):
+        with tqdm(total=len(futures), leave=False, smoothing=0, desc=f'{episode_info["name"]}') as bar:
+            for _ in concurrent.futures.as_completed(futures):
                 bar.update()
     
     
@@ -102,7 +107,7 @@ def download_episode(thread_id: int, episode_index: int, download_dir: str = '.'
     if process.stdout is not None:
         with process.stdout:
             log_subprocess_output(process.stdout, logging.DEBUG)
-        exitcode = process.wait()
+        process.wait()
     
     
     log.info(f'{episode_info["name"]} moving file to destination...')
@@ -118,14 +123,23 @@ def download_episode(thread_id: int, episode_index: int, download_dir: str = '.'
     log.info(f'{episode_info["name"]} downloaded!')
     
     
-def download_anime(thread_id: int, download_dir: str = '.', threads: int = 8, e_threads: int = 4):
+def download_anime(thread_id: int, 
+                   download_dir: str = '.', 
+                   threads: int = 8, 
+                   e_threads: int = 4,
+                   episode_list: list[int] | None = None):
+    
     print(f'fetching anime info of {thread_id}...')
     anime_info = Myself.anime_total_info(url=f'https://Myself-bbs.com/thread-{thread_id}-1-1.html')
     episodes = len(anime_info['video'])
     
     download_dir = os.path.join(download_dir, anime_info['name'])
     
-    with ThreadPoolExecutor(max_workers=e_threads) as executor:
+    download_list: list[int] = []
+    
+    if episode_list is not None:
+        download_list = episode_list
+    else:
         for i in range(episodes):
             file_name = f'{anime_info["name"]} {anime_info["video"][i]["name"]}.mp4'
             file_path = os.path.join(download_dir, file_name)
@@ -136,7 +150,21 @@ def download_anime(thread_id: int, download_dir: str = '.', threads: int = 8, e_
                 continue
             
             log.info(f'{anime_info["video"][i]["name"]} not downloaded, proceed to download')
-            executor.submit(download_episode, thread_id, i, download_dir, threads, anime_info=anime_info)
+            download_list.append(i)
+    
+    with ThreadPoolExecutor(max_workers=e_threads) as executor:
+        futures: list[Future] = [executor.submit(download_episode, 
+                                                 thread_id, 
+                                                 e, 
+                                                 download_dir, 
+                                                 threads, 
+                                                 anime_info=anime_info, 
+                                                 bar_position=i) 
+                                 for i, e in enumerate(download_list)]
+        
+        with tqdm(total=len(futures), smoothing=0, desc=f'{anime_info["name"]}') as bar:
+            for _ in concurrent.futures.as_completed(futures):
+                bar.update()
             
     
     print(f'finished downloading {anime_info["name"]}')
@@ -205,9 +233,8 @@ if __name__ == '__main__':
     log.debug(args)
     
     if args.subcmd == 'download':
-        if len(args.episode_index) > 0:
-            with ThreadPoolExecutor(max_workers=args.c) as executor:
-                for e in args.episode_index:
-                    executor.submit(download_episode, args.thread_id, e, download_dir=args.download_path)
-        else:
-            download_anime(args.thread_id, download_dir=args.download_path, threads=args.threads, e_threads=args.c)
+        download_anime(args.thread_id, 
+                       download_dir=args.download_path, 
+                       threads=args.threads, 
+                       e_threads=args.c, 
+                       episode_list=args.episode_index)
