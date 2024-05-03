@@ -127,7 +127,7 @@ def download_anime(thread_id: int,
                    download_dir: str = '.', 
                    threads: int = 8, 
                    e_threads: int = 4,
-                   episode_list: list[int] | None = None):
+                   episode_list: list[int] = []):
     
     print(f'fetching anime info of {thread_id}...')
     anime_info = Myself.anime_total_info(url=f'https://Myself-bbs.com/thread-{thread_id}-1-1.html')
@@ -137,7 +137,7 @@ def download_anime(thread_id: int,
     
     download_list: list[int] = []
     
-    if episode_list is not None:
+    if len(episode_list) > 0:
         download_list = episode_list
     else:
         for i in range(episodes):
